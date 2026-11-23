@@ -16,8 +16,8 @@
 推荐钉到 40 位 commit，这样插件列表会提供 git 更新：
 
 ```text
-https://github.com/744855705/dsh-basic-auth.git#<40位commit>
-github:744855705/dsh-basic-auth#<40位commit>
+https://github.com/744855705/dsh-basic-auth.git#e174ce2400b451628595e119b0aaa70c305ad895
+github:744855705/dsh-basic-auth#e174ce2400b451628595e119b0aaa70c305ad895
 ```
 
 两种安装入口等价：
