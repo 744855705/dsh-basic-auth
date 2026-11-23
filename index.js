@@ -426,13 +426,22 @@ function isFormContentType(request) {
   return raw.split(';', 1)[0].trim().toLowerCase() === 'application/x-www-form-urlencoded'
 }
 
-function sameOrigin(request, protocol) {
+function sameOrigin(request) {
   const origin = headerValue(request.headers, 'origin')
   if (origin === undefined) return true
-  const authority = authorityFor(protocol, request.headers)
-  if (authority === undefined) return false
+  const host = headerValue(request.headers, 'host')
+  if (host === undefined || host.length === 0 || /[\s/\\?#@]/u.test(host)) return false
+  let originUrl
   try {
-    return new URL(origin).origin === authority
+    originUrl = new URL(origin)
+  } catch {
+    return false
+  }
+  if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false
+  try {
+    // Compare the authority only: an HTTPS reverse proxy may forward to this
+    // HTTP listener, and DSH's own request fence accepts that case too.
+    return new URL(`${originUrl.protocol}//${host}`).host === originUrl.host
   } catch {
     return false
   }
@@ -539,7 +548,7 @@ export async function apply(ctx, config) {
       respondEmpty(response, 405, { allow: 'POST' })
       return
     }
-    if (!sameOrigin(request, ctx.webServer.protocol)) {
+    if (!sameOrigin(request)) {
       respondEmpty(response, 403)
       return
     }
@@ -590,7 +599,7 @@ export async function apply(ctx, config) {
       respondEmpty(response, 405, { allow: 'POST' })
       return
     }
-    if (!sameOrigin(request, ctx.webServer.protocol)) {
+    if (!sameOrigin(request)) {
       respondEmpty(response, 403)
       return
     }
@@ -619,7 +628,7 @@ export async function apply(ctx, config) {
     const supplied = params.get('token') ?? url.searchParams.get('setup') ?? ''
     const authorised = isLoopback(request.socket?.remoteAddress) || setupMatches(supplied)
     if (!authorised) {
-      respondNotice(response, 403, { pageTitle: settings.pageTitle, heading: '无法设置', message: '首次设置只能从本机发起，或使用启动日志打印的一次性设置链接。' }, request.method)
+      respondNotice(response, 403, { pageTitle: settings.pageTitle, heading: '无法设置', message: '首次设置只能从本机发起，或使用启动日志里最新的一次性设置链接。' }, request.method)
       return
     }
     const username = params.get('username') ?? ''
@@ -654,7 +663,7 @@ export async function apply(ctx, config) {
       respondEmpty(response, 405, { allow: 'POST' })
       return
     }
-    if (!sameOrigin(request, ctx.webServer.protocol)) {
+    if (!sameOrigin(request)) {
       respondEmpty(response, 403)
       return
     }
@@ -714,7 +723,26 @@ export async function apply(ctx, config) {
       const stored = await readAccount(ctx.credentials)
       if (disconnected.signal.aborted || response.destroyed) return
       if (stored === undefined) {
-        respondPage(response, renderSetup({ pageTitle: settings.pageTitle, token: setupMatches(url.searchParams.get('setup') ?? '') ? url.searchParams.get('setup') : undefined }), 401, request.method)
+        const setupParam = url.searchParams.get('setup')
+        const tokenValid = setupMatches(setupParam ?? '')
+        if (isLoopback(request.socket?.remoteAddress) || tokenValid) {
+          respondPage(response, renderSetup({
+            pageTitle: settings.pageTitle,
+            token: tokenValid ? setupParam : undefined,
+          }), 401, request.method)
+        } else if (setupParam !== null) {
+          respondNotice(response, 401, {
+            pageTitle: settings.pageTitle,
+            heading: '设置链接无效',
+            message: '这个一次性设置链接已失效。Host 每次启动都会更换链接；请在服务器上取最新链接，或从 Host 本机打开根地址。',
+          }, request.method)
+        } else {
+          respondNotice(response, 401, {
+            pageTitle: settings.pageTitle,
+            heading: '需要一次性设置链接',
+            message: '首次设置只能从 Host 本机发起，或使用启动日志里最新的一次性链接。',
+          }, request.method)
+        }
         return
       }
       respondPage(response, renderLogin({ pageTitle: settings.pageTitle, days: settings.cookieMaxAgeDays }), 401, request.method)
