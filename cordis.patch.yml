@@ -1,0 +1,5 @@
+- insert:
+    - id: basic-auth
+      name: '@744855705/dsh-basic-auth'
+      config:
+        cookieMaxAgeDays: 180

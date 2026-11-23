@@ -1,0 +1,38 @@
+{
+  "name": "@744855705/dsh-basic-auth",
+  "version": "1.0.0",
+  "description": "Username/password sign-in for the DSH Web UI",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "engines": {
+    "dsh": "^0.2.3-alpha.1"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/744855705/dsh-basic-auth.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-bundle",
+    "authentication",
+    "basic-auth"
+  ]
+}

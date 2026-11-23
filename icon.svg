@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Basic auth shield">
+  <defs>
+    <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 54 12.5v17.2c0 13.9-8.9 24.6-22 30.3C18.9 54.3 10 43.6 10 29.7V12.5Z" fill="url(#shield)"/>
+  <path d="M32 9.8 48.7 16.5v13.2c0 11.1-6.9 19.8-16.7 24.8-9.8-5-16.7-13.7-16.7-24.8V16.5Z" fill="#FFFFFF" opacity=".14"/>
+  <circle cx="32" cy="26" r="7" fill="#FFFFFF"/>
+  <rect x="28.6" y="31" width="6.8" height="13" rx="3.4" fill="#FFFFFF"/>
+</svg>

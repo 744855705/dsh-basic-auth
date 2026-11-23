@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Username and password sign-in",
+    "description": "Protects the Web UI root page with a local username and password. Successful sign-in issues a signed browser cookie; token links and QR sign-in keep working."
+  }
+}
