@@ -29,6 +29,8 @@ github:744855705/dsh-basic-auth#<40位commit>
 
 > 用分支名（如 `#main`）也能装，但后续不会提示 git 更新；正式使用建议钉 commit。
 
+开发时也可以直接装本地目录：`plugin_manager` → `install_bundle`，`target` 指向本仓库的绝对路径；本地目录安装是链接，改文件后重新启用该行即可热重载。
+
 ## 首次设置
 
 安装后，如果凭据库里还没有账号，插件会在 Host 控制台打印一行：
@@ -166,6 +168,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3080/__basic-a
 | 登录成功但仍回到登录页 | 反向代理下 `Host` / `Origin` 与访问源不一致，cookie authority 不匹配 |
 | `429` 且 `Retry-After` 很长 | 该来源连续失败触发锁定；等待或重启 Host 清空内存计数 |
 | 插件加载失败，提示 `basic-auth/session` 或 `basic-auth/account` 格式无效 | 凭据记录损坏；按「重置」删除记录并重启 |
+| 安装报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | 这是 pnpm 对**现有 profile lockfile** 的供应链校验（与插件无关）：lockfile 里有发布未满 24 小时的包。等该条目过观察期后重试，或临时把 profile `pnpm-workspace.yaml` 的 `minimumReleaseAge` 设为 `0`、装完立即恢复 |
 | 安装报 `incompatible-version` | DSH 版本低于 0.2.3-alpha.1，或高于 0.3.0 |
 | 安装时 git 拉取失败 | 检查 `git ls-remote <spec>` 能否在本机完成；公开仓库不需要 token |
 
