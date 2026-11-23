@@ -666,11 +666,11 @@ export async function apply(ctx, config) {
     limiters.clear()
   }, 'basic-auth: runtime state')
 
-  ctx.connection.authentication.register({
+  ctx.effect(() => ctx.connection.authentication.register({
     authenticate(request) {
       return authenticate(request)
     },
-  })
+  }), 'basic-auth: authentication provider')
 
   ctx.on('webserver/request', async (request, response, next) => {
     if (request.socket?.destroyed || response.destroyed) return
