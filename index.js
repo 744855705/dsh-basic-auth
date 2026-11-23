@@ -8,7 +8,7 @@
  * unauthenticated GET/HEAD root page and never registers the `/` route.
  */
 import { createHash, createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
-import { isIPv4, isIPv6 } from 'node:net'
+import { isIPv6 } from 'node:net'
 import { promisify } from 'node:util'
 
 const scrypt = promisify(scryptCallback)
@@ -17,7 +17,7 @@ const scrypt = promisify(scryptCallback)
 export const name = 'basic-auth'
 
 /** Host services this bundle consumes. */
-export const inject = ['connection', 'connection.authentication', 'credentials', 'webServer', 'webApp']
+export const inject = ['connection', 'connection.authentication', 'credentials', 'webServer']
 
 const ACCOUNT_KEY = 'basic-auth/account'
 const SESSION_KEY = 'basic-auth/session'
@@ -30,7 +30,6 @@ const PAYLOAD_VERSION = 1
 const RECORD_VERSION = 1
 const SECRET_BYTES = 32
 const SALT_BYTES = 16
-const SETUP_TOKEN_BYTES = 24
 const HASH_BYTES = 32
 
 const DAY_MS = 86_400_000
@@ -45,7 +44,7 @@ const SCRYPT_OPTIONS = Object.freeze({ N: 16_384, r: 8, p: 1, maxmem: 67_108_864
 const PAGE_HEADERS = Object.freeze({
   'content-type': 'text/html; charset=utf-8',
   'cache-control': 'no-store',
-  'referrer-policy': 'no-referrer',
+  'referrer-policy': 'same-origin',
   'x-content-type-options': 'nosniff',
   'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 })
@@ -248,13 +247,6 @@ function plainAddress(value) {
   return value.startsWith('::ffff:') ? value.slice(7) : value
 }
 
-function isLoopback(value) {
-  const address = plainAddress(value)
-  if (address === undefined) return false
-  if (isIPv4(address)) return address.startsWith('127.')
-  return address === '::1'
-}
-
 function addressKey(request) {
   const address = plainAddress(request.socket?.remoteAddress)
   if (address === undefined) return 'unknown'
@@ -341,7 +333,7 @@ function renderDocument(title, body) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="same-origin">
 <meta name="generator" content="dsh-basic-auth">
 <title>${escapeHtml(title)}</title>
 <style>${PAGE_STYLE}</style>
@@ -368,14 +360,12 @@ ${message}
 <footer>登录状态保存在此浏览器中，最长 ${days} 天；密码不会离开这台 Host。</footer>`)
 }
 
-function renderSetup({ pageTitle, token, error }) {
-  const hidden = token === undefined ? '' : `<input type="hidden" name="token" value="${escapeHtml(token)}">`
+function renderSetup({ pageTitle, error }) {
   const message = error === undefined ? '' : `<p class="error" role="alert">${escapeHtml(error)}</p>`
   return renderDocument(`${pageTitle} · 首次设置`, `${PAGE_MARK}
 <h1>首次设置</h1>
 <p class="sub">这台 Host 还没有账号。创建后，访问根页需要先登录。</p>
 <form method="post" action="${SETUP_PATH}">
-${hidden}
 <label>用户名<input type="text" name="username" autocomplete="username" maxlength="64" required autofocus></label>
 <p class="hint">1–64 位，可用字母、数字和 . _ @ -</p>
 <label>密码<input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
@@ -383,7 +373,7 @@ ${hidden}
 ${message}
 <button type="submit">创建账号并登录</button>
 </form>
-<footer>本机访问可直接设置；远程设置请使用启动日志打印的一次性设置链接。</footer>`)
+<footer>设置完成后，此页面会变为登录页；请妥善保管密码。</footer>`)
 }
 
 function renderNotice({ pageTitle, heading, message, retryAfter }) {
@@ -494,7 +484,6 @@ export async function apply(ctx, config) {
   const lifetimeMs = settings.cookieMaxAgeDays * DAY_MS
   const limiters = new Map()
   const secure = ctx.webServer.protocol === 'https:'
-  const setupToken = account === undefined ? encodeBase64Url(randomBytes(SETUP_TOKEN_BYTES)) : undefined
   let active = true
 
   const authenticate = (request) => {
@@ -523,11 +512,6 @@ export async function apply(ctx, config) {
     const authority = authorityFor(ctx.webServer.protocol, request.headers)
     if (authority === undefined) return undefined
     return `${cookieName(authority)}=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`
-  }
-
-  const setupMatches = (provided) => {
-    if (setupToken === undefined || provided === undefined || provided === '') return false
-    return safeEqualString(provided, setupToken)
   }
 
   const safeHandler = (label, run) => async (request, response) => {
@@ -624,20 +608,12 @@ export async function apply(ctx, config) {
       return
     }
     const params = new URLSearchParams(form.body)
-    const url = new URL(request.url ?? '/', 'http://dsh.invalid')
-    const supplied = params.get('token') ?? url.searchParams.get('setup') ?? ''
-    const authorised = isLoopback(request.socket?.remoteAddress) || setupMatches(supplied)
-    if (!authorised) {
-      respondNotice(response, 403, { pageTitle: settings.pageTitle, heading: '无法设置', message: '首次设置只能从本机发起，或使用启动日志里最新的一次性设置链接。' }, request.method)
-      return
-    }
     const username = params.get('username') ?? ''
     const password = params.get('password') ?? ''
     const confirm = params.get('confirm') ?? ''
-    const token = setupMatches(supplied) ? supplied : undefined
     const failure = validateSetup(username, password, confirm)
     if (failure !== undefined) {
-      respondPage(response, renderSetup({ pageTitle: settings.pageTitle, token, error: failure }), 400, request.method)
+      respondPage(response, renderSetup({ pageTitle: settings.pageTitle, error: failure }), 400, request.method)
       return
     }
     const salt = randomBytes(SALT_BYTES)
@@ -723,26 +699,7 @@ export async function apply(ctx, config) {
       const stored = await readAccount(ctx.credentials)
       if (disconnected.signal.aborted || response.destroyed) return
       if (stored === undefined) {
-        const setupParam = url.searchParams.get('setup')
-        const tokenValid = setupMatches(setupParam ?? '')
-        if (isLoopback(request.socket?.remoteAddress) || tokenValid) {
-          respondPage(response, renderSetup({
-            pageTitle: settings.pageTitle,
-            token: tokenValid ? setupParam : undefined,
-          }), 401, request.method)
-        } else if (setupParam !== null) {
-          respondNotice(response, 401, {
-            pageTitle: settings.pageTitle,
-            heading: '设置链接无效',
-            message: '这个一次性设置链接已失效。Host 每次启动都会更换链接；请在服务器上取最新链接，或从 Host 本机打开根地址。',
-          }, request.method)
-        } else {
-          respondNotice(response, 401, {
-            pageTitle: settings.pageTitle,
-            heading: '需要一次性设置链接',
-            message: '首次设置只能从 Host 本机发起，或使用启动日志里最新的一次性链接。',
-          }, request.method)
-        }
+        respondPage(response, renderSetup({ pageTitle: settings.pageTitle }), 401, request.method)
         return
       }
       respondPage(response, renderLogin({ pageTitle: settings.pageTitle, days: settings.cookieMaxAgeDays }), 401, request.method)
@@ -775,14 +732,4 @@ export async function apply(ctx, config) {
     auth: 'anonymous',
     handler: safeHandler('logout', handleLogout),
   }), 'basic-auth: logout route')
-
-  if (setupToken !== undefined) {
-    try {
-      const advertised = new URL(ctx.webApp.getAdvertisedUrl())
-      advertised.searchParams.set('setup', setupToken)
-      console.log(`[basic-auth] 首次设置：${advertised.href}`)
-    } catch (error) {
-      ctx.logger.warn('[basic-auth] 无法读取对外地址；请在本机打开根地址完成首次设置。', error)
-    }
-  }
 }

@@ -1,6 +1,6 @@
 # @744855705/dsh-basic-auth
 
-给 DeepSeek Harness（DSH）Web UI 加一层**本机用户名 + 密码登录**。未登录访问站点根地址时显示中文登录页；登录成功后由插件自己签发浏览器 cookie，之后照常进入应用。原有的 `?token=` 启动链接与二维码登录保持原样。
+给 DeepSeek Harness（DSH）Web UI 加一层**本机用户名 + 密码登录**。访问站点根地址即可：未初始化时显示设置页，初始化后显示登录页；登录成功后由插件自己签发浏览器 cookie，之后照常进入应用。原有的 `?token=` 启动链接与二维码登录保持原样。
 
 - Host-only bundle，零依赖、零构建、无安装脚本
 - 不改 DSH 源码，不注册 `/` 路由，不碰 `/api`，不禁用 remote-connection
@@ -33,19 +33,14 @@ github:744855705/dsh-basic-auth#b05ac2fbf1afb7f5495f0c1e6f05944f408b5fe5
 
 ## 首次设置
 
-安装后，如果凭据库里还没有账号，插件会在 Host 控制台打印一行：
+安装后不需要任何命令或一次性链接：直接打开站点根地址（如 `http://<host>:3080/`）。
 
-```text
-[basic-auth] 首次设置：http://<对外地址>/?setup=<一次性 token>
-```
-
-- 打开这个链接即可设置账号；**token 只在当前进程内有效，只打印一次**。
-- **Host 每次启动都会更换链接**：用旧链接访问会显示「设置链接无效」；未授权访问根页只显示提示，不再渲染注定提交失败的表单。
-- 如果就在本机，直接访问站点根地址（如 `http://127.0.0.1:3080/`）也会看到设置页，无需 token（loopback 免 token）。
-- 设置页字段：用户名、密码、确认密码。用户名 1–64 位，可用字母、数字和 `. _ @ -`；密码至少 8 位。
+- 还没有账号时，根页显示设置表单；填用户名、密码、确认密码并提交即可。
+- 设置页字段：用户名 1–64 位，可用字母、数字和 `. _ @ -`；密码至少 8 位。
 - 提交成功后会写入账号、立即签发 cookie，并跳回应用根页。
+- 账号写入后，根页自动变为登录页；再访问 `POST /__basic-auth/setup` 固定返回 `409`。
 
-> 设置 token 不要发到聊天、日志或截图里。远程设置请在 Host 所在机器的终端里打开上面那行链接。
+> **先到先得**：设置账号之前，任何能访问该端口的人都可以创建第一个账号。首次启动后请立即设置，或用防火墙 / 安全组限制来源网络。
 
 ## 日常使用
 
@@ -84,19 +79,19 @@ github:744855705/dsh-basic-auth#b05ac2fbf1afb7f5495f0c1e6f05944f408b5fe5
 
 1. 在 `~/.dsh/.credentials.yaml`（或凭据管理界面）删除这两条记录。
 2. 重启 DSH。
-3. 控制台会重新打印 `[basic-auth] 首次设置：…`，按首次设置流程重新创建账号。
+3. 再次打开根地址就会回到首次设置页，重新创建账号（不需要命令）。
 
 只删 `account` 不删 `session` 时，旧 cookie 在到期前仍然有效；要彻底失效，请两条都删。签名密钥记录损坏时插件会**报错并停止启用**，不会静默重建；按上面的步骤删除后重启即可。
 
 ## 安全说明
 
-- **必须用 HTTPS 对外提供服务。** 登录表单和 cookie 在明文 HTTP 下会被同网段的人截获。仅在本机 loopback 上临时使用 HTTP 可以接受。
+- **必须用 HTTPS 对外提供服务。** 登录表单和 cookie 在明文 HTTP 下会被同网段的人截获。仅限本机或受信网络临时使用 HTTP。
 - 密码用 `scrypt(N=16384, r=8, p=1)` 加盐派生，只保存 salt 与 32 字节 hash；明文只在请求体内存中存在。
 - 登录失败统一提示「用户名或密码错误」，不区分账号是否存在；任何路径都不记录密码。
 - 按来源 IP 归一化限流；锁定期间不再比对密码，返回 `429` + `Retry-After`。
-- 页面响应带 `Cache-Control: no-store`、`Referrer-Policy: no-referrer`、`X-Content-Type-Options: nosniff` 与严格 CSP，不发送 `WWW-Authenticate`（避免浏览器原生 Basic 弹窗）。
+- 页面响应带 `Cache-Control: no-store`、`Referrer-Policy: same-origin`、`X-Content-Type-Options: nosniff` 与严格 CSP，不发送 `WWW-Authenticate`（避免浏览器原生 Basic 弹窗）。`no-referrer` 会让 Chromium 对表单 POST 发送 `Origin: null`，被 DSH 的请求 fence 拒绝为 `forbidden`，因此不能使用。
 - 登录 POST 带 `Origin` 时要求与请求自身同源，跨站表单会被拒绝。
-- 首次设置只允许 loopback 或正确的一次性 token；设置完成后该接口固定返回 `409`。
+- 首次设置是**先到先得**：账号写入后该接口固定返回 `409`。初始化窗口内请限制谁能访问该端口。
 - 这是单账号的本地防护，不做多用户、找回密码、OIDC/LDAP。需要更强身份体系请用 DSH 自带的 token / 二维码远程登录，或在前置反向代理上做认证。
 - 反向代理场景：`Host` 与 `Origin` 必须与浏览器实际访问的源一致，否则 cookie authority 不匹配、登录不会生效。
 
@@ -122,7 +117,7 @@ DSH 升级后先在插件列表确认本插件状态为 `applied`（不是 `fail
 # 1 未登录根页：401 + text/html + 含 username 输入框
 curl -si http://127.0.0.1:3080/ | head -20
 
-# 2 首次设置（loopback 免 token），期望 303 + Set-Cookie
+# 2 首次设置（裸根页，无需 token），期望 303 + Set-Cookie
 curl -si -c /tmp/jar -X POST http://127.0.0.1:3080/__basic-auth/setup \
   -d 'username=admin&password=S3cret-pass&confirm=S3cret-pass'
 
@@ -172,6 +167,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3080/__basic-a
 | 安装报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | 这是 pnpm 对**现有 profile lockfile** 的供应链校验（与插件无关）：lockfile 里有发布未满 24 小时的包。等该条目过观察期后重试，或临时把 profile `pnpm-workspace.yaml` 的 `minimumReleaseAge` 设为 `0`、装完立即恢复 |
 | 安装报 `incompatible-version` | DSH 版本低于 0.2.3-alpha.1，或高于 0.3.0 |
 | 安装时 git 拉取失败 | 检查 `git ls-remote <spec>` 能否在本机完成；公开仓库不需要 token |
+| 浏览器提交设置/登录返回纯 `forbidden` | 页面 `Referrer-Policy` 为 `no-referrer` 时 Chromium 会发 `Origin: null`；本插件 1.0.3 起改用 `same-origin` |
 
 ## 许可
 
